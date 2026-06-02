@@ -1,0 +1,50 @@
+name: pushT_image
+environment: PushT
+
+task_name: &task_name PushT
+
+use_abs_action: &use_abs_action false
+use_image: &use_image true
+# use_image: &use_image false
+
+feedback_threshold: 0.1  # for abs, should be 0.05
+
+dim_a: &dim_a 2
+dim_o: &dim_o 24 # dim of observation for low-dim states
+e: [0.2, 0.2]  # only define diagional
+loss_weight_inverse_e: [1.0, 1.0]
+
+camera_names: ["robot0_eye_in_hand", 'agentview']
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    image:
+      shape: [3, 96, 96]
+      type: rgb
+    agent_pos:
+      shape: [2]
+      type: low_dim
+  action:
+    shape: [2]
+
+crop_shape: [84, 84] # used in obs_encoder
+
+
+robot0_eef_pos_max: [1, 1]
+robot0_eef_pos_min: [-1, -1]
+action_max: [512, 512]
+action_min: [0.0, 0.0]
+
+
+
+number_of_repetitions: 50
+evaluations_per_training: 10
+max_num_of_episodes: 300
+# max_num_of_episodes: 162
+max_time_steps_episode: 500
+max_time_steps_per_repetition: 700000
+
+# dataset_type: &dataset_type ph
+# # dataset_path: &dataset_path data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
+# dataset_path: &dataset_path ${HOME}/Github_Opensource_Projects/robomimic/datasets/square/ph/image_v141_abs.hdf5

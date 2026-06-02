@@ -1,0 +1,104 @@
+Bootstrap: docker
+From: nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+%labels
+    Description SDP runtime with CUDA, conda, robosuite, and MuJoCo
+
+%files
+    src/environment.yml /opt/sdp/environment.yml
+    src/requirements.txt /opt/sdp/requirements.txt
+    src/pyproject.toml /opt/sdp/pyproject.toml
+    src/main-real-robot.py /opt/sdp/src/main-real-robot.py
+    src/main-receding_horizon.py /opt/sdp/src/main-receding_horizon.py
+    src/agents /opt/sdp/src/agents
+    src/config /opt/sdp/src/config
+    src/config_real /opt/sdp/src/config_real
+    src/env /opt/sdp/src/env
+    src/script /opt/sdp/src/script
+    src/tools /opt/sdp/src/tools
+
+%post
+    set -eux
+    export DEBIAN_FRONTEND=noninteractive
+
+    mkdir -p /opt/sdp /opt/sdp/src /tmp/sdp-cache
+
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        bash \
+        bzip2 \
+        build-essential \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        git \
+        libegl1 \
+        libegl1-mesa-dev \
+        libgl1 \
+        libgl1-mesa-dev \
+        libgl1-mesa-dri \
+        libglew-dev \
+        libglib2.0-0 \
+        libglfw3 \
+        libglfw3-dev \
+        libgles2 \
+        libosmesa6 \
+        libosmesa6-dev \
+        libsm6 \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        openmpi-bin \
+        libopenmpi-dev \
+        patchelf \
+        pkg-config \
+        wget
+    apt-get clean
+    rm -rf /var/lib/apt/lists/*
+
+    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p /opt/conda
+    rm -f /tmp/miniconda.sh
+
+    export PATH="/opt/conda/bin:$PATH"
+    . /opt/conda/etc/profile.d/conda.sh
+
+    export CONDA_NO_PLUGINS=true
+    conda config --set solver classic
+    conda install -y -n base cmake=3.22.1
+
+    cd /opt/sdp
+    conda env create --prefix /opt/conda/envs/sdp -f /opt/sdp/environment.yml
+    conda activate /opt/conda/envs/sdp
+
+    # Prefer the headless wheel for cluster training and offscreen rendering.
+    pip uninstall -y opencv-python || true
+    pip install --no-cache-dir "opencv-python-headless<4.10"
+
+    # Reinstall the CUDA-enabled torch wheels explicitly to avoid CPU fallback.
+    pip install --no-cache-dir \
+        torch==1.12.1+cu113 \
+        torchvision==0.13.1+cu113 \
+        --extra-index-url https://download.pytorch.org/whl/cu113
+
+    conda clean --all -y
+    pip cache purge || true
+
+%environment
+    export PATH="/opt/conda/envs/sdp/bin:/opt/conda/bin:$PATH"
+    export CONDA_DEFAULT_ENV=sdp
+    export CONDA_PREFIX=/opt/conda/envs/sdp
+    export PROJECT_ROOT=/opt/sdp/src
+    export PYTHONPATH=/opt/sdp/src:$PYTHONPATH
+    export MUJOCO_GL=egl
+    export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
+    export XDG_CACHE_HOME=/tmp/sdp-cache
+    export MPLCONFIGDIR=/tmp/sdp-cache/matplotlib
+    export HF_HOME=/tmp/sdp-cache/huggingface
+    export JAX_CACHE_DIR=/tmp/sdp-cache/jax
+
+%runscript
+    . /opt/conda/etc/profile.d/conda.sh
+    conda activate /opt/conda/envs/sdp
+    cd /opt/sdp/src
+    exec "$@"

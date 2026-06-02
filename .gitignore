@@ -1,0 +1,17 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+/Files/src/weights/**
+/Images/Experiments**
+/data_temp/**
+/saved_data-till0507/**
+/saved_data_till0815/**
+/results-till0815/**
+/saved_data-old/**
+/saved_data_till0830/**
+/saved_data_till1104/**
+/saved_data_till1209/**
+/Files/CLIC_nvidia.sif

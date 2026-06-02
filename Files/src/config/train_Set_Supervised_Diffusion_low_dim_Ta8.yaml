@@ -1,0 +1,152 @@
+defaults:
+  - _self_
+  # - task: square_image_vel
+  # - task: square_image_abs
+  # - task: pickcan_image_vel
+  # - task: twoArmLift_image_vel
+  # - task: twoArmLift_image_abs
+  # - task: pushT_vel
+  # - task: pushT_abs
+  # - task: metaworld_hammer_vel
+  - task: line_following
+
+task_name: ${task.task_name}
+experiment_id: ${AGENT.experiment_id}
+
+GENERAL:
+  # simulator and tasks
+  environment: ${task.environment}
+  use_abs_action: ${task.use_abs_action}
+  use_image: ${task.use_image}
+  task: ${task.task_name}
+
+
+  save_results: true
+  record_traj_dataset: false
+
+  number_of_repetitions: ${task.number_of_repetitions}
+  evaluations_per_training: ${task.evaluations_per_training}
+  max_num_of_episodes: ${task.max_num_of_episodes}
+  max_time_steps_episode: ${task.max_time_steps_episode}
+  max_time_steps_per_repetition: ${task.max_time_steps_per_repetition}
+
+  # feedback
+  theta: 0.1  # threshold for each dimension of the oracle teacher's action
+  feedback_threshold: ${task.feedback_threshold}
+  oracle_teacher: true
+  human_teacher: false
+  executed_human_correction: true
+
+
+  # adding noise to the teacher action
+  oracle_teacher_noise: 0   # directional noise angle
+  if_biased_directional_noise: false
+  oracle_teacher_magnitude_noise: false
+  oracle_teacher_magnitude_noise_parameter: 0 # directional noise magnitude
+  oracle_teacher_only_one_dim: false
+  oracle_teacher_Gaussian_noise: false    # Gaussian noise
+  # oracle_teacher_Gaussian_noise: true    # Gaussian noise
+
+  Ta: 16  # horizon
+  Ta_executed: 8
+  Tr: 2
+
+AGENT:
+  # Replay buffer types: hdf5_obs_action_buffer, traj_ref_buffer, pickle_obs_action_buffer.
+  # For intervention data, traj_ref_buffer is offline-only; online runs may still use it for non-intervention data.
+  intervention_replay_buffer_type: pickle_obs_action_buffer
+  non_intervention_replay_buffer_type: pickle_obs_action_buffer
+  use_abs_action: ${task.use_abs_action}
+  use_image: ${task.use_image}
+  image_crop_shape: ${task.crop_shape} # used in obs_encoder
+
+  shape_meta: ${task.shape_meta}
+
+  dim_a: ${task.dim_a}
+  dim_o: ${task.dim_o}  # TODO define this in task.yaml
+
+  #TODO move this to task.yaml
+  # e: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]  # only define diagional
+  # loss_weight_inverse_e: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+  e: ${task.e} # only define diagional
+  loss_weight_inverse_e: ${task.loss_weight_inverse_e}
+  policy_model_learning_rate: 0.0002
+  number_training_iterations: 100
+  # number_training_iterations: 240
+
+  # Ta: 16
+  # Ta_executed: 8
+  Ta: ${GENERAL.Ta}  # horizon
+  Ta_executed:  ${GENERAL.Ta_executed}
+
+  agent: Set_Supervised_Diffusion
+  algorithm: Set_Supervised_Diffusion_intervention
+
+  use_AutoEncoder_loss: false  # whether to have an extra autoencoder task to obtain a good latent feature space (only used in real-robot experiments)
+  frozen_obs_encoder: false
+
+    # DDPM
+  DDPM_num_train_timesteps: 50
+  use_DDIM_during_inference: true
+  num_inference_steps: 16
+
+    # no_negative_action: true  # if true, the agent doesn't have access to robot action (a-); instead, a- is created by a+ + noise
+  no_negative_action: false  # if true, the agent doesn't have access to robot action (a-); instead, a- is created by a+ + noise
+  scale_no_negative_action: 0.01 # a- = a+ + Gaussian(0, scale_no_negative_action^2)
+
+
+  # desiredA_type: Half # select from [Half, Circular]
+  desiredA_type: Circular # select from [Half, Circular]
+  # large_desiredA: true # for Ta>1, if true, treat the whole action chunk as a single action
+  large_desiredA: false # for Ta>1, if true, treat the whole action chunk as a single action
+  desiredA_random_reflection: false
+
+  # parameters for desiredA_type = Half
+  sphere_alpha: 30
+  sphere_gamma: 0.9
+  # parameters for desiredA_type = Circular
+  radius_ratio: 0.01
+  # radius_ratio: 0.9
+
+  # sample actions during trainiong
+  # sample_action_number: 128  # good for offline training
+  # sample_action_number: 64
+  sample_action_number: 16
+  sample_with_desiredA_reverse_start_t: 16
+
+  # Policy decoder: ConditionalUnet1D or HumanFunctionModel
+  policy_model_type: HumanFunctionModel  # for line-following; should set to ConditionalUnet1D for other more challenging tasks
+  diffusion_step_embed_dim: 128
+  unet_down_dims: [512, 1024]  # For Action horzion < 4, the downsampling depth should be one
+
+  # Buffer
+  buffer_max_size: 60000
+  buffer_min_size: 64
+  buffer_sampling_rate: 20
+  train_end_episode: true
+  buffer_sampling_size: 64
+  action_upper_limits: 1
+  action_lower_limits: -1
+
+
+  # log
+  save_policy: false
+  save_buffer: false
+  experiment_id: "${now:%Y%m%d_%H%M%S}_${AGENT.algorithm}_${AGENT.desiredA_type}_${task.name}_Ta${AGENT.Ta}_offline${AGENT.offline_training}"
+  base_dir: saved_data/
+  saved_dir: saved_data/
+
+  load_dir: null
+  load_policy: false
+  # load_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/
+
+  offline_training: false
+  # offline_training: true
+  # evaluate the policy under saved_dir
+  evaluate: false
+  load_pretrained_dir: null
+
+
+FEEDBACK:
+  use_space_mouse: false

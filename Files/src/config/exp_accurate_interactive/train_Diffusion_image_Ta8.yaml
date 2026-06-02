@@ -1,0 +1,132 @@
+defaults:
+  - _self_
+  # - task: square_image_vel
+  - task: square_image_abs
+  # - task: pickcan_image_vel
+  # - task: pickcan_image_abs
+  # - task: twoArmLift_image_vel
+  # - task: twoArmLift_image_abs
+  # - task: pushT_abs
+
+task_name: ${task.task_name}
+experiment_id: ${AGENT.experiment_id}
+
+
+GENERAL:
+  # simulator and tasks
+  environment: ${task.environment}
+  use_abs_action: ${task.use_abs_action}
+  use_image: ${task.use_image}
+  task: ${task.task_name}
+
+
+  save_results: true
+  record_traj_dataset: false
+
+  number_of_repetitions: ${task.number_of_repetitions}
+  evaluations_per_training: ${task.evaluations_per_training}
+  max_num_of_episodes: ${task.max_num_of_episodes}
+  max_time_steps_episode: ${task.max_time_steps_episode}
+  max_time_steps_per_repetition: ${task.max_time_steps_per_repetition}
+
+  # feedback
+  theta: 0.1  # threshold for each dimension of the oracle teacher's action
+  feedback_threshold: ${task.feedback_threshold}
+  oracle_teacher: true
+  human_teacher: false
+
+
+  # adding noise to the teacher action
+  oracle_teacher_noise: 0   # directional noise angle
+  if_biased_directional_noise: false
+  oracle_teacher_magnitude_noise: false
+  oracle_teacher_magnitude_noise_parameter: 0 # directional noise magnitude
+  oracle_teacher_only_one_dim: false
+  oracle_teacher_Gaussian_noise: false    # Gaussian noise
+  # oracle_teacher_Gaussian_noise: true    # Gaussian noise
+
+  Ta: 16  # horizon
+  Ta_executed: 8
+
+AGENT:
+  use_hdf5_dataset: false
+  use_abs_action: ${task.use_abs_action}
+  use_image: ${task.use_image}
+  image_crop_shape: ${task.crop_shape} # used in obs_encoder
+
+  shape_meta: ${task.shape_meta}
+
+  dim_a: ${task.dim_a}
+  dim_o: ${task.dim_o}  # TODO define this in task.yaml
+
+  e: ${task.e} # only define diagional
+  loss_weight_inverse_e: ${task.loss_weight_inverse_e}
+  policy_model_learning_rate: 0.0002
+  # number_training_iterations: 3000
+  number_training_iterations: 1000
+
+  # Ta: 16
+  # Ta_executed: 8
+  Ta: ${GENERAL.Ta}  # horizon
+  Ta_executed:  ${GENERAL.Ta_executed}
+
+  agent: Diffusion
+  algorithm: Diffusion_policy
+
+  # use_AutoEncoder_loss: true  # used during pre-training
+  use_AutoEncoder_loss: false
+  # frozen_obs_encoder: true
+  frozen_obs_encoder: false
+
+  use_ambient_loss: false  # loss for Ambient Diffusion for linear corrupted data
+  ambient_k: 3  # number of dimensions that should trust; for PushT, 1, for Square, 3 or 4, for TwoArm, 7
+
+    # DDPM
+  DDPM_num_train_timesteps: 100
+  # use_DDIM_during_inference: false
+  # num_inference_steps: ${AGENT.DDPM_num_train_timesteps}
+  use_DDIM_during_inference: true
+  num_inference_steps: 16
+  # Unet Policy decoder
+  diffusion_step_embed_dim: 128
+  unet_down_dims: [512, 1024, 2048]
+
+
+  # Buffer
+  # buffer_max_size: 35000
+  buffer_max_size: 50000
+  buffer_min_size: 64
+  # buffer_min_size: 32
+  buffer_sampling_rate: 20
+  train_end_episode: true
+  buffer_sampling_size: 64
+  # buffer_sampling_size: 32
+  action_upper_limits: 1
+  action_lower_limits: -1
+
+
+  # log
+  save_policy: false
+  save_buffer: false
+  experiment_id: "${now:%Y%m%d_%H%M%S}_${AGENT.algorithm}_${task.name}_Ta${AGENT.Ta}_offline${AGENT.offline_training}"
+  base_dir: saved_data/
+  saved_dir: saved_data/
+  load_policy: false
+  # evaluate the policy under saved_dir
+  # evaluate: true
+  evaluate: false
+  # load_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/
+
+  load_dir: null
+
+
+  # offline_training: true
+  offline_training: false
+  # if offline_training is true, load the buffer from the dir below
+  # load_pretrained_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/0601_abs_Ta8_img_Thre005_T100_E6_cir/repetition_000/
+  # load_pretrained_dir: saved_data/robosuite_square/Diffusion_policy/0526_abs_Ta8_online_img_Thre005_T1000_D14/repetition_000/
+  load_pretrained_dir: null
+  buffer_dataset_path: null
+
+FEEDBACK:
+  use_space_mouse: false

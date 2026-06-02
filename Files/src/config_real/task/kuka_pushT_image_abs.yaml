@@ -1,0 +1,52 @@
+name: kuka-pushT-img
+environment: Kuka
+
+task_name: &task_name kuka-pushT-img
+
+use_abs_action: &use_abs_action true
+use_image: &use_image true
+
+feedback_threshold: 0.02  # for abs, should be 0.05
+
+dim_a: &dim_a 2
+dim_o: &dim_o 52 # dim of observation for low-dim states
+e: [0.2, 0.2]  # only define diagional
+loss_weight_inverse_e: [1.0, 1.0]
+
+camera_names: ["image1", 'image2']
+
+# TODO update the env accordingly to output the obs_dict in this format
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    image1:
+      shape: [3, 240, 320]
+      type: rgb
+    image2:
+      shape: [3, 240, 320]
+      type: rgb
+    robot0_eef_pos_vel:
+      shape: [4]
+      # type default: low_dim
+  action:
+    shape: [2]
+
+# crop_shape: [216, 288]
+crop_shape: [228, 304]
+
+
+
+#  ee_pos_limit_xyz =  [0.3, 0.7, -0.4, 0.2, 0.142, 0.165]
+
+robot0_eef_pos_max: [0.7, 0.2]
+robot0_eef_pos_min: [0.3, -0.4]
+
+number_of_repetitions: 1
+evaluations_per_training: 10
+max_num_of_episodes: 300
+max_time_steps_episode: 500
+max_time_steps_per_repetition: 700000
+
+# dataset_type: &dataset_type ph
+# # dataset_path: &dataset_path data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
+# dataset_path: &dataset_path ${HOME}/Github_Opensource_Projects/robomimic/datasets/square/ph/image_v141_abs.hdf5

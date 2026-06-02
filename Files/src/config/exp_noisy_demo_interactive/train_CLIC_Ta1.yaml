@@ -1,0 +1,134 @@
+defaults:
+  - _self_
+  # - task: square_image_vel
+  # - task: square_image_abs
+  # - task: pickcan_image_vel
+  # - task: twoArmLift_image_vel
+  - task: twoArmLift_image_abs
+  # - task: pushT_vel
+  # - task: pushT_abs
+  # - task: metaworld_hammer_vel
+  # - task: line_following
+
+task_name: ${task.task_name}
+experiment_id: ${AGENT.experiment_id}
+
+GENERAL:
+  # simulator and tasks
+  environment: ${task.environment}
+  use_abs_action: ${task.use_abs_action}
+  use_image: ${task.use_image}
+  task: ${task.task_name}
+
+
+  save_results: true
+  record_traj_dataset: false
+
+  number_of_repetitions: ${task.number_of_repetitions}
+  evaluations_per_training: ${task.evaluations_per_training}
+  max_num_of_episodes: ${task.max_num_of_episodes}
+  max_time_steps_episode: ${task.max_time_steps_episode}
+  max_time_steps_per_repetition: ${task.max_time_steps_per_repetition}
+
+  # feedback
+  theta: 0.1  # threshold for each dimension of the oracle teacher's action
+  feedback_threshold: ${task.feedback_threshold}
+  oracle_teacher: true
+  human_teacher: false
+
+
+  # adding noise to the teacher action
+  oracle_teacher_noise: 0   # directional noise angle
+  if_biased_directional_noise: false
+  oracle_teacher_magnitude_noise: false
+  oracle_teacher_magnitude_noise_parameter: 0 # directional noise magnitude
+  oracle_teacher_only_one_dim: false
+  # oracle_teacher_Gaussian_noise: false    # Gaussian noise
+  oracle_teacher_Gaussian_noise: true    # Gaussian noise
+
+  Ta: 1  # horizon
+  Ta_executed: 1
+
+AGENT:
+  use_abs_action: ${task.use_abs_action}
+  use_image: ${task.use_image}
+  image_crop_shape: ${task.crop_shape} # used in obs_encoder
+
+  shape_meta: ${task.shape_meta}
+
+  dim_a: ${task.dim_a}
+  dim_o: ${task.dim_o}  # TODO define this in task.yaml
+
+  e: ${task.e} # only define diagional
+  loss_weight_inverse_e: ${task.loss_weight_inverse_e}
+  policy_model_learning_rate: 0.0002
+  number_training_iterations: 200
+  # number_training_iterations: 100
+
+  # Ta: 16
+  # Ta_executed: 8
+  Ta: ${GENERAL.Ta}  # horizon
+  Ta_executed:  ${GENERAL.Ta_executed}
+
+  agent: CLIC
+  algorithm: CLIC_EBM
+  use_tensorflow_version: false
+
+  # desiredA_type: Half # select from [Half, Circular]
+  desiredA_type: Circular # select from [Half, Circular]
+  # large_desiredA: true # for Ta>1, if true, treat the whole action chunk as a single action
+  large_desiredA: false # for Ta>1, if true, treat the whole action chunk as a single action
+
+  # parameters for desiredA_type = Half
+  # sphere_alpha: 30
+  # sphere_gamma: 0.3
+  sphere_alpha: 100
+  sphere_gamma: 0.1
+  # parameters for desiredA_type = Circular
+  radius_ratio: 0.8
+  # radius_ratio: 0.9
+
+  softmax_temperature_policy: 1.0
+  softmax_temperature_measurement: 0.05
+  prob_weight: 5.0
+  nn_hidden_dim: [512, 512, 512, 512, 256]
+  grad_pen_weight: 0.1
+
+  # sample actions during trainiong
+  sample_action_number: 512
+  # sample_action_number: 128
+  mcmc_iteration: 25
+
+  # Buffer
+  buffer_max_size: 30000
+  buffer_min_size: 32
+  buffer_sampling_rate: 20
+  train_end_episode: true
+  buffer_sampling_size: 32
+  action_upper_limits: 1
+  action_lower_limits: -1
+
+
+  # log
+  save_policy: false
+  save_buffer: false
+  experiment_id: "${now:%Y%m%d_%H%M%S}_${AGENT.algorithm}_${AGENT.desiredA_type}_${task.name}_Ta${AGENT.Ta}_offline${AGENT.offline_training}"
+  base_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/
+  saved_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/
+
+  load_dir: null
+  load_policy: false
+  # load_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/
+
+  offline_training: false
+  # offline_training: true
+  # evaluate the policy under saved_dir
+  evaluate: false
+  ## vel dataset
+  load_pretrained_dir: null
+  ## abs dataset
+  # load_pretrained_dir: saved_data/robosuite_square/Diffusion_CLIC_intervention/0601_abs_Ta1_img_Thre005_T100_E6_SA128_cir/repetition_000/
+
+
+FEEDBACK:
+  use_space_mouse: false

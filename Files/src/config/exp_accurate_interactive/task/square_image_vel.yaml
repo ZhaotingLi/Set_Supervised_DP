@@ -1,0 +1,60 @@
+name: square_image
+environment: robosuite
+
+task_name: &task_name NutAssemblySquare
+
+use_abs_action: &use_abs_action false
+use_image: &use_image true
+# use_image: &use_image false
+
+feedback_threshold: 0.1  # for abs, should be 0.05
+
+dim_a: &dim_a 7
+dim_o: &dim_o 48 # dim of observation for low-dim states
+e: [0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]  # only define diagional
+loss_weight_inverse_e: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+limit_eef_vel: false
+scale_vel_control: true
+
+camera_names: ["robot0_eye_in_hand", 'agentview']
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    agentview_image:
+      shape: [3, 84, 84]
+      type: rgb
+    robot0_eye_in_hand_image:
+      shape: [3, 84, 84]
+      type: rgb
+    robot0_eef_pos:
+      shape: [3]
+      # type default: low_dim
+    robot0_eef_quat:
+      shape: [4]
+    robot0_gripper_qpos:
+      shape: [2]
+  action:
+    shape: [7]
+
+crop_shape: [72, 72] # used in obs_encoder
+
+action_max: [1, 1, 1]
+action_min: [-1, -1, -1] # ours
+# action_min: [-0.2258, -0.0487,  0.7792] # DP
+gripper_qpose_max: [ 0.04187732, -0.00039201]
+gripper_qpose_min: [-0.00132913, -0.04164233]
+robot0_eef_pos_max: [0.29555445, 0.31293629, 1.10113877]
+robot0_eef_pos_min: [-0.33556048831637464, -0.04873956,  0.77917393]
+
+number_of_repetitions: 50
+evaluations_per_training: 10
+max_num_of_episodes: 300
+# max_num_of_episodes: 162
+max_time_steps_episode: 500
+max_time_steps_per_repetition: 700000
+
+# dataset_type: &dataset_type ph
+# # dataset_path: &dataset_path data/robomimic/datasets/${task.task_name}/${task.dataset_type}/image_abs.hdf5
+# dataset_path: &dataset_path ${HOME}/Github_Opensource_Projects/robomimic/datasets/square/ph/image_v141_abs.hdf5

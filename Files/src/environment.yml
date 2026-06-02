@@ -1,0 +1,10 @@
+name: conda-env-SDP          # choose whatever name you like
+channels:
+  - defaults               # or add conda-forge if you need it
+dependencies:
+  - python=3.10             # match the Python version from your Poetry config
+  - openmpi           # or mpich
+  - mpi4py
+  - pip                    # ensure pip is available inside the conda env
+  - pip:
+      - -r requirements.txt # tell pip to install everything from your exported lis

@@ -1,0 +1,84 @@
+# Base image. Override with:
+#   docker build --build-arg SDP_BASE_IMAGE=franka_robot_docker:v1 ...
+ARG SDP_BASE_IMAGE=zhaoting123/franka_robot_docker:v1
+FROM ${SDP_BASE_IMAGE}
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Maintainer info (optional but recommended)
+LABEL maintainer=""
+
+# Set up ROS environment for interactive shells and build steps.
+ENV ROS_SETUP=/opt/ros/noetic/setup.bash
+ENV BASH_ENV=${ROS_SETUP}
+RUN test -f "${ROS_SETUP}"
+
+
+# Set environment variables for conda
+ENV CONDA_DIR=/opt/conda
+ENV PATH=$CONDA_DIR/bin:$PATH
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcudnn8 \
+    libcublas-12-0 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+#RUN sudo apt-get update
+#RUN sudo apt-get install -y cuda-toolkit-11-4
+
+# Install system dependencies and Miniconda
+RUN apt-get update && apt-get install -y wget bzip2 && \
+    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    bash /tmp/miniconda.sh -b -p $CONDA_DIR && \
+    rm /tmp/miniconda.sh && \
+    $CONDA_DIR/bin/conda clean -afy && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+    
+# Set the working directory
+WORKDIR /app
+COPY src/environment.yml /app/
+COPY src/requirements.txt /app/
+COPY src/environment_cu128.yml /app/
+COPY src/requirements_cu128.txt /app/
+
+# Create the conda environment
+RUN conda tos accept \
+      --override-channels \
+      --channel https://repo.anaconda.com/pkgs/main && \
+    conda tos accept \
+      --override-channels \
+      --channel https://repo.anaconda.com/pkgs/r
+RUN conda env create -f environment.yml
+## For new Nvidia gpu, use environment_cu128.yml
+# RUN conda env create -f environment_cu128.yml   
+    
+
+# RUN poetry run pip install git+https://github.com/Farama-Foundation/Metaworld.git@master#egg=metaworld
+# RUN poetry run pip install roboticstoolbox-python
+RUN conda run -n conda-env-SDP pip install roboticstoolbox-python
+
+# RUN poetry run pip install --upgrade "nvidia-tensorrt<8.0"
+
+ENV PATH=/usr/local/cuda/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+
+# [!] used for cuda, otherwise tensorflow fails to find libdevice
+ENV PATH=/usr/local/cuda-11.4/bin:$PATH
+ENV LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64:$LD_LIBRARY_PATH
+ENV XLA_FLAGS=--xla_gpu_cuda_data_dir=/usr/local/cuda-11.4
+
+RUN conda run -n conda-env-SDP pip install PyYAML
+RUN conda run -n conda-env-SDP pip install "numpy-quaternion<2024"
+
+# Copy the entire project
+COPY src/ /app/
+
+# skip to copy saved_data and results as these two are too big
+# RUN mkdir -p /app/saved_data
+RUN mkdir -p /app/results
+# RUN mkdir -p /catkin_ros1_ws/src/relaxed_ik_ros1/relaxed_ik_core/saved_data/
+
+
+#COPY src/outputs_docker/20250712_111252_Implicit_BC_kuka-pushT-img_Ta1_offlineTrue/ /app/outputs_docker/20250712_111252_Implicit_BC_kuka-pushT-img_Ta1_offlineTrue/
+#COPY src/saved_data/ /catkin_ros1_ws/src/relaxed_ik_ros1/relaxed_ik_core/saved_data/
+
+WORKDIR /app
