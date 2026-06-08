@@ -1105,7 +1105,7 @@ class HDF5Buffer:
 
         For each episode with length T:
         - Build windows of actions [t : t+Ta) for both robot & teacher.
-        - Save the observation at index t+1 (mimics train_single_repetition's
+        - Save the observation at index t+1 (mimics train_interactive_learning_repetition's
             data_id=1 logic, where obs aligns with the 2nd element of the window).
         - A window is valid if teacher actions are present over the whole window
             (ALL no_teacher_actions==False) when require_all_teacher_present=True;

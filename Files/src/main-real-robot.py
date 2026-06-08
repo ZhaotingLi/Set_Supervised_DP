@@ -42,7 +42,7 @@ def resolve_config_path(project_root, path, field_name, required=False):
 #                      Used for collecting corrections. 
 # ==============================================================================
 
-def train_single_repetition_Ta8(env, policy_oracle, feedback_receiver, feedback_receiver_keyboard, i_repetition, config_general, config_agent, render_savefig_flag = True):  # used in delftblue
+def train_interactive_learning_repetition(env, policy_oracle, feedback_receiver, feedback_receiver_keyboard, i_repetition, config_general, config_agent, render_savefig_flag = True):  # used in delftblue
     traj_buffer = TrajectoryBuffer()  # used to save trajectory-level data for preference learning
     import rospy
     from env.franka.pose_transform_functions import get_euler_from_quaternion, get_quaternion_from_euler, euler_to_axis_angle
@@ -581,7 +581,7 @@ def collect_dataset_repetition(env, policy_oracle, feedback_receiver, feedback_r
             logger.debug('h:  %s  done:  %s', h, done)
             last_action = action 
             
-            # if receive_feedback_phrase:
+            # if receive_feedback_phase:
             #     teacher_action_to_buffer = teacher_action_agent_i
             #     robot_action_to_buffer = action_agent_i
             #     no_robot_action = False
@@ -1083,7 +1083,7 @@ def main(cfg: DictConfig):
         else:
             import rospy
             env, policy_oracle, feedback_receiver, feedback_receiver_keyboard = env_selector_real_robot(config_general, config_feedback, config_task)
-            train_single_repetition_Ta8(env, policy_oracle, feedback_receiver,feedback_receiver_keyboard, rep_idx, config_general, config_agent) 
+            train_interactive_learning_repetition(env, policy_oracle, feedback_receiver,feedback_receiver_keyboard, rep_idx, config_general, config_agent) 
            
   
 if __name__ == "__main__":

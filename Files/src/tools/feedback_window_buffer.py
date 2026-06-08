@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FeedbackTrainingChunk:
-    """Training payload produced from a feedback window inside `train_single_repetition`."""
+    """Training payload produced from a feedback window inside `train_interactive_learning_repetition`."""
     obs_proc: Any = None
     negative_action_ta: Optional[np.ndarray] = None
     optimal_action_ta: Optional[np.ndarray] = None
@@ -44,7 +44,7 @@ class FeedbackTrainingChunk:
 
 
 class FeedbackWindowBuffer:
-    """Store and slice Ta-length teacher-correction windows for `train_single_repetition`."""
+    """Store and slice Ta-length teacher-correction windows for `train_interactive_learning_repetition`."""
 
     def __init__(self):
         self.reset()
@@ -67,7 +67,7 @@ class FeedbackWindowBuffer:
 
     def append_step(
         self,
-        receive_feedback_phrase: bool,
+        receive_feedback_phase: bool,
         obs_proc,
         h,
         h_no_threshold,
@@ -76,7 +76,7 @@ class FeedbackWindowBuffer:
         ta_i_teacher: int,
     ):
         """Append one step of feedback state, or clear the window when feedback stops."""
-        if not receive_feedback_phrase:
+        if not receive_feedback_phase:
             self.reset()
             return h, ta_i_teacher
 

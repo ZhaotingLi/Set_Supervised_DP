@@ -172,7 +172,6 @@ To simulate noisy corrective feedback, enable Gaussian teacher noise with a Hydr
 python main-receding_horizon.py \
   --config-path='config/exp_accurate_interactive' \
   --config-name=train_Circular_Set_Supervised_Diffusion_image_Ta8 \
-  task=pickcan_image_abs \
   GENERAL.oracle_teacher_Gaussian_noise=true
 ```
 
@@ -181,9 +180,49 @@ You can also use the preset noisy-feedback configs under `Files/src/config/exp_n
 ```bash
 python main-receding_horizon.py \
   --config-path='config/exp_noisy_demo_interactive' \
-  --config-name=train_Circular_Set_Supervised_Diffusion_image_Ta8 \
-  task=pickcan_image_abs
+  --config-name=train_Circular_Set_Supervised_Diffusion_image_Ta8 
 ```
+
+Online experiment outputs are written under the Hydra run directory. If you run from
+`Files/src`, this is usually `Files/src/outputs/<date>/<time>/`; for easier lookup,
+you can set:
+
+```bash
+hydra.run.dir='outputs/${experiment_id}'
+```
+
+Then the experiment run directory is `Files/src/outputs/<experiment_id>/`.
+Inside one online IIL run, the main logs and artifacts are:
+
+| Artifact | Location |
+| --- | --- |
+| TensorBoard logs | `<run_dir>/saved_data/repetition_000/logs/` |
+| Evaluation results CSV | `<run_dir>/results/<experiment_id>_0.csv` |
+| Saved policy/checkpoints and optional online replay buffer | `<run_dir>/saved_data/repetition_000/` |
+| Trajectory dataset, when `GENERAL.record_traj_dataset=true` | `<run_dir>/trajectory_buffer_0.hdf5` |
+
+View TensorBoard from `Files/src` with:
+
+```bash
+tensorboard --logdir outputs/<experiment_id>/saved_data/repetition_000/logs
+```
+
+For image-observation tasks, enable trajectory recording with:
+
+```bash
+python main-receding_horizon.py \
+  --config-path='config/exp_accurate_interactive' \
+  --config-name=train_Circular_Set_Supervised_Diffusion_image_Ta8 
+  GENERAL.record_traj_dataset=true 
+```
+
+Inspect the recorded image trajectory from `Files/src` with:
+
+```bash
+python script/visualize_traj_buffer_data_hdf5.py --buffer-path outputs/<experiment_id>/trajectory_buffer_0.hdf5 
+```
+
+
 
 ---
 ### Offline Learning

@@ -13,9 +13,7 @@ from env.env_selector import env_selector
 from tools.buffer_trajectory import TrajectoryBuffer
 from tools.feedback_window_buffer import FeedbackWindowBuffer
 from tools.oracle_feedback import (
-    oracle_gimme_feedback,
     oracle_feedback_HGDagger,
-    oracle_feedback_intervention_diff,
 )
 from tools.receding_horizon_helpers import (
     evaluation_saving_results_process,
@@ -36,6 +34,147 @@ def resolve_config_path(project_root, path, field_name, required=False):
     if os.path.isabs(path):
         return path
     return os.path.join(project_root, path)
+
+
+def _has_feedback_correction(h):
+    """Return True when the previous step produced a teacher correction."""
+    return h is not None and np.any(h)
+
+
+def _action_from_teacher_correction(
+    h,
+    last_action,
+    current_agent,
+    agent_type,
+    environment_name,
+    obs_proc,
+    env,
+    policy_oracle,
+    use_abs_action,
+):
+    """Convert the teacher correction signal into the action executed now."""
+    corrected_action = h
+    
+    # Query the teacher policy with the corrected action. In PushT this maps the
+    # candidate action through the environment controller; in other environments
+    # the oracle policy/environment provides the teacher's preferred action.
+    action_i = get_teacher_action(
+        environment_name,
+        obs_proc,
+        action_agent=corrected_action,
+        env=env,
+        policy_oracle=policy_oracle,
+    )
+    if not use_abs_action:
+        action_i = np.clip(action_i, -1, 1)
+    return action_i
+
+
+def _action_from_agent_plan(
+    current_agent,
+    obs_proc,
+    action_agent_Ta,
+    Ta_i,
+    Ta,
+    receive_feedback_phase,
+    Ta_i_teacher,
+):
+    """Return the next robot-policy action and update feedback-window counters."""
+    # Open the teacher-query window at the end of the receding-horizon action
+    # chunk. While this window is open, the oracle may provide corrections.
+    if Ta_i >= Ta - 1 and receive_feedback_phase is False:
+        receive_feedback_phase = True
+
+    # Query a new Ta-length robot action chunk when the previous chunk is used
+    # up, or when the feedback window was closed before the first action.
+    if Ta_i >= Ta - 1 or (receive_feedback_phase is False and Ta_i == 0):
+        action_agent_Ta = current_agent.action(obs_proc)
+        Ta_i = 0
+
+    action_i = action_agent_Ta[Ta_i, :]
+    if receive_feedback_phase:
+        Ta_i_teacher = Ta_i_teacher + 1
+
+    return action_i, action_agent_Ta, Ta_i, receive_feedback_phase, Ta_i_teacher
+
+
+def _choose_action_for_step(
+    h,
+    last_action,
+    current_agent,
+    agent_type,
+    environment_name,
+    obs_proc,
+    env,
+    policy_oracle,
+    use_abs_action,
+    action_agent_Ta,
+    Ta_i,
+    Ta,
+    receive_feedback_phase,
+    Ta_i_teacher,
+):
+    """Choose either the teacher-corrected action or the robot-policy action."""
+    if _has_feedback_correction(h):
+        action_i = _action_from_teacher_correction(
+            h,
+            last_action,
+            current_agent,
+            agent_type,
+            environment_name,
+            obs_proc,
+            env,
+            policy_oracle,
+            use_abs_action,
+        )
+        return action_i, action_agent_Ta, Ta_i, receive_feedback_phase, Ta_i_teacher + 1
+
+    return _action_from_agent_plan(
+        current_agent,
+        obs_proc,
+        action_agent_Ta,
+        Ta_i,
+        Ta,
+        receive_feedback_phase,
+        Ta_i_teacher,
+    )
+
+
+def _feedback_window_finished(Ta_i_teacher, Ta, receive_feedback_phase):
+    """Return True when the current teacher-query window should close."""
+    return Ta_i_teacher > 2 * Ta - 1 and receive_feedback_phase is True
+
+
+def _agent_action_for_feedback_comparison(current_agent, obs_proc, action_agent_Ta, Ta_i, Tr):
+    """Return the robot action that the teacher correction is compared against."""
+    # During intervention we refresh the robot action chunk every Tr steps.
+    # The teacher correction is computed against this robot action.
+    if action_agent_Ta is None or Ta_i >= Tr:
+        action_agent_Ta = current_agent.action(obs_proc)
+        action_agent_i = action_agent_Ta[0, :]
+        Ta_i = 0
+    else:
+        action_agent_i = action_agent_Ta[Ta_i, :]
+
+    return action_agent_i, action_agent_Ta, Ta_i
+
+
+def _intervention_feedback_correction(
+    teacher_action_i,
+    action_agent_i,
+    current_agent,
+    config_general,
+):
+    """Compute teacher feedback for intervention-style algorithms."""
+    # Compare teacher and robot actions to get thresholded and unthresholded corrections.
+    h, h_no_threshold = oracle_feedback_HGDagger(
+        teacher_action_i,
+        action_agent_i,
+        None,
+        config=config_general,
+    )
+    current_agent.e = np.identity(current_agent.dim_a)
+    return h, h_no_threshold
 
 
 def test_teacher_policy(env, policy_oracle, feedback_receiver, i_repetition, config_general, config_agent):
@@ -85,8 +224,8 @@ def test_teacher_policy(env, policy_oracle, feedback_receiver, i_repetition, con
 #       These corrections are aggregated into the dataset.
 #       Training is performed both during the episode and again after the episode ends.
 # ==========================
-def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition, config_general, config_agent, render_savefig_flag = False):  
-    """Run one repetition of training: init seeds, run episodes, eval & save."""
+def train_interactive_learning_repetition(env, policy_oracle, feedback_receiver, i_repetition, config_general, config_agent, render_savefig_flag = False):  
+    """Run one online training repetition with receding-horizon teacher feedback."""
     traj_buffer = TrajectoryBuffer()  # used to save trajectory-level data for preference learning
     SEED = 48 + i_repetition
     random.seed(SEED)
@@ -165,8 +304,9 @@ def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition,
         Tr = getattr(config_general, "Tr", 2) if config_general is not None else 2 # Queried action-chunk length during intervention
         reset_Ta_i = False
         action_agent_Ta = None
-        receive_feedback_phrase = False
+        receive_feedback_phase = False
         success_ep = 0
+        h_no_threshold = None
         feedback_window = FeedbackWindowBuffer()
         
         current_agent.evaluation = False
@@ -179,69 +319,59 @@ def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition,
 
             obs_proc = observation
 
-            # Agent's action or teacher's correction
-            if h is not None and np.any(h):
-                if agent_type in ['HG_DAgger','Implicit_BC','IWR','PVP','Diffusion', 'Set_Supervised_Diffusion']:
-                    action_i = h
-                else:
-                    action_i = last_action + np.matmul(current_agent.e, h)
+            # Execute either the teacher's correction from the previous step or
+            # the next action in the robot's current receding-horizon plan.
+            action_i, action_agent_Ta, Ta_i, receive_feedback_phase, Ta_i_teacher = _choose_action_for_step(
+                h=h,
+                last_action=last_action,
+                current_agent=current_agent,
+                agent_type=agent_type,
+                environment_name=environment_name,
+                obs_proc=obs_proc,
+                env=env,
+                policy_oracle=policy_oracle,
+                use_abs_action=use_abs_action,
+                action_agent_Ta=action_agent_Ta,
+                Ta_i=Ta_i,
+                Ta=Ta,
+                receive_feedback_phase=receive_feedback_phase,
+                Ta_i_teacher=Ta_i_teacher,
+            )
 
-                action_i = get_teacher_action(environment_name, obs_proc, action_agent=action_i,  env=env, policy_oracle=policy_oracle) # query the teacher here
-
-                if not use_abs_action:
-                    action_i = np.clip(action_i, -1, 1)
-                Ta_i_teacher = Ta_i_teacher + 1
-            else:                
-                if Ta_i >= Ta -1 and receive_feedback_phrase is False:
-                    receive_feedback_phrase = True
-                    
-                if Ta_i >= Ta -1 or (receive_feedback_phrase is False and Ta_i == 0):
-                    action_agent_Ta = current_agent.action(obs_proc)
-                    Ta_i = 0
-                
-                action_i = action_agent_Ta[Ta_i, :]
-                # if receive_feedback_phrase and Ta_i_teacher > 0:
-                if receive_feedback_phrase:
-                    Ta_i_teacher = Ta_i_teacher + 1
-                
             teacher_action_i = get_teacher_action(environment_name, obs_proc, action_agent=action_i,  env=env, policy_oracle=policy_oracle)
             # Step environment
             observation, reward, done, _, info = env.step(action_i)
             
+            # The robot stops this episode when the environment terminates,
+            # reports task success through info, or reaches the max step limit.
             env_done_fake, success_ep = is_env_done(info)
             done = done or env_done_fake or t == max_time_steps_episode
             last_action = action_i 
 
-            # Decide if feedback is given by the teacher
-            if Ta_i_teacher > 2*Ta - 1 and receive_feedback_phrase is True:
-                receive_feedback_phrase = False
+            # Close the teacher-query window after its configured horizon. The
+            # next step starts a fresh robot action chunk and clears old feedback.
+            if _feedback_window_finished(Ta_i_teacher, Ta, receive_feedback_phase):
+                receive_feedback_phase = False
                 Ta_i_teacher = 0
                 reset_Ta_i = True
 
             h = None
-            if not no_feedback_mode and oracle_teacher and (receive_feedback_phrase is True):
-                # execute the teacher action for Ta steps
-                if action_agent_Ta is None or Ta_i >= Tr:
-                    action_agent_Ta = current_agent.action(obs_proc)
-                    action_agent_i = action_agent_Ta[0, :]
-                    Ta_i = 0
-                else:      
-                    action_agent_i = action_agent_Ta[Ta_i, :]  # we compare the action in the previous step
-
-                if agent_type in ['HG_DAgger','Implicit_BC','IWR','PVP','Diffusion']:
-                    if agent_algorithm in ['Diffusion_policy_relative','ibc_relative','pvp_relative']:
-                        tmp_h, h_no_threshold = oracle_gimme_feedback(teacher_action_i, action_agent_i, None, config=config_general)
-                        h = current_agent.e * np.array(tmp_h) + action_agent_i
-                    else:
-                        h, h_no_threshold = oracle_feedback_HGDagger(teacher_action_i, action_agent_i, None, config=config_general)
-                else:
-                    if agent_algorithm in ["Policy_Contrastive_intervention", "Policy_Contrastive_sphere_intervention", "CLIC_EBM"
-                                               , 'Set_Supervised_Diffusion_intervention', 'Diffusion_DPO']:
-                        h, h_no_threshold = oracle_feedback_HGDagger(teacher_action_i, action_agent_i, None, config=config_general)
-                        current_agent.e = np.identity(current_agent.dim_a)
-                    else:
-                        tmp_h, h_no_threshold = oracle_gimme_feedback(teacher_action_i, action_agent_i, None, config=config_general)
-                        h = current_agent.e * np.array(tmp_h) + action_agent_i
+            if not no_feedback_mode and oracle_teacher and (receive_feedback_phase is True):
+                # The oracle gives a correction only while the teacher-query
+                # window is open. The correction h is used on the next step.
+                action_agent_i, action_agent_Ta, Ta_i = _agent_action_for_feedback_comparison(
+                    current_agent=current_agent,
+                    obs_proc=obs_proc,
+                    action_agent_Ta=action_agent_Ta,
+                    Ta_i=Ta_i,
+                    Tr=Tr,
+                )
+                h, h_no_threshold = _intervention_feedback_correction(
+                    teacher_action_i=teacher_action_i,
+                    action_agent_i=action_agent_i,
+                    current_agent=current_agent,
+                    config_general=config_general,
+                )
 
                 last_action = action_agent_i
 
@@ -251,7 +381,7 @@ def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition,
                 reset_Ta_i = False
 
             h, Ta_i_teacher = feedback_window.append_step(  # append feedback or reset the buffer to empty
-                receive_feedback_phrase=receive_feedback_phrase,
+                receive_feedback_phase=receive_feedback_phase,
                 obs_proc=obs_proc,
                 h=h,
                 h_no_threshold=h_no_threshold,
@@ -261,15 +391,17 @@ def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition,
             )
 
             if human_teacher and not oracle_teacher:
-                # Real-time user feedback (example)
+                # Human mode reads live correction input. The human can also
+                # force the robot to stop the episode through the receiver.
                 h = feedback_receiver.get_h()
                 if feedback_receiver.ask_for_done():
                     done = True
 
             '''save to traj buffer'''
             if record_traj_dataset:
-                # if receive_feedback_phrase and Ta_i_teacher > 0:
-                if receive_feedback_phrase and feedback_window.latest_intervention_active():  # check whether the latest buffered step is a real intervention
+                # Save teacher action only for real intervention steps. For
+                # normal robot-only steps, store zeros and mark no_teacher_action.
+                if receive_feedback_phase and feedback_window.latest_intervention_active():
                     teacher_action_to_buffer = teacher_action_i
                     robot_action_to_buffer = action_agent_i
                     no_robot_action = False
@@ -297,13 +429,20 @@ def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition,
                     traj_buffer.finish_trajectory()
                     traj_buffer.save_to_file("trajectory_buffer_"+str(i_repetition))
 
-            # Collect feedback and Train agent
+            # Convert the buffered teacher-correction window into training data.
+            # When feedback is disabled, the robot still acts in the environment
+            # but this online data collection/training step is skipped.
             if not no_feedback_mode:
-                training_chunk = feedback_window.pop_training_chunk(Ta)  # pop the next Ta-length chunk for online training
+                # pop_training_chunk returns data only after Ta consecutive
+                # buffered steps are available; otherwise it returns an empty chunk.
+                training_chunk = feedback_window.pop_training_chunk(Ta)
                 training_chunk.log_training_chunk()
+                # Count one feedback when the whole Ta-step chunk contains a
+                # real teacher intervention.
                 h_counter += training_chunk.feedback_count_delta()
 
-                # Collect data if h is not none; Also train the policy 
+                # Add the chunk to the replay buffer and run the agent's online
+                # training update. Empty chunks are handled inside the agent.
                 current_agent.collect_data_and_train(
                     last_action=training_chunk.training_last_action(agent_type), 
                     h=training_chunk.h_ta,
@@ -316,13 +455,19 @@ def train_single_repetition(env, policy_oracle, feedback_receiver, i_repetition,
                     i_episode=i_episode
                 )
                 
-                if success_ep == 1 and feedback_window.can_flush_success_padding():   # padding data as the same as diffusion policy
+                # If the task succeeds before a full Ta-step chunk is available,
+                # pad the remaining buffered intervention steps so the diffusion
+                # policy still receives fixed-horizon training samples.
+                if success_ep == 1 and feedback_window.can_flush_success_padding():
                     while feedback_window.can_flush_success_padding():
-                        padded_chunk = feedback_window.flush_success_padding_chunk(Ta)  # flush remaining buffered steps with padding after success
+                        # Flush one padded success chunk at a time until the
+                        # feedback window has no usable buffered steps left.
+                        padded_chunk = feedback_window.flush_success_padding_chunk(Ta)
                         padded_chunk.log_success_padding_chunk()
                         h_counter += padded_chunk.feedback_count_delta()
 
-                         # Collect data if h is not none; Also train the policy 
+                        # Train on the padded chunk. done=False keeps this as a
+                        # valid fixed-horizon sample instead of an episode end.
                         current_agent.collect_data_and_train(
                             last_action=padded_chunk.training_last_action(agent_type), 
                             h=padded_chunk.h_ta,
@@ -641,7 +786,7 @@ def main(cfg: DictConfig):
         elif config_agent['offline_training']:
             train_offline_repetition(env, policy_oracle, feedback_receiver, rep_idx, config_general, config_agent)   # offline training with dataset
         else:
-            train_single_repetition(env, policy_oracle, feedback_receiver, rep_idx, config_general, config_agent, render_savefig_flag = config_general.get('render_savefig_flag', False))  # online training
+            train_interactive_learning_repetition(env, policy_oracle, feedback_receiver, rep_idx, config_general, config_agent, render_savefig_flag = config_general.get('render_savefig_flag', False))  # online training
 
         # test_teacher_policy(env, policy_oracle, feedback_receiver, rep_idx, config_general, config_agent)
 

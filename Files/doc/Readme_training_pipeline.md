@@ -75,7 +75,7 @@ These generate **interventions** or **corrections** used by interactive imitatio
 
 ### 3. **Training Loop**
 
-Core function: `train_single_repetition(...)`
+Core function: `train_interactive_learning_repetition(...)`
 
 Steps per episode:
 
